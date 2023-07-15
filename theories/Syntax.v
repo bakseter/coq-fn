@@ -19,6 +19,7 @@ Module Syntax.
   with BExpr : Type :=
     | B_Const : bool -> BExpr
     | B_Eq : Expr -> Expr -> BExpr
+    | B_And : BExpr -> BExpr -> BExpr
     | B_Func : FExpr_Sub -> BExpr
     | B_Var : string -> BExpr
 

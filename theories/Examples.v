@@ -14,15 +14,17 @@ Module Examples.
     F_Let "factorial"
       (F_Lambda "n"
         (F_Cond
-          (B_Le (A_Func (F_Var "n")) (A_Const 1))
+          (B_Eq (E_Arith (A_Var "n")) (E_Arith (A_Const 1)))
           (F_Return (E_Arith (A_Const 1)))
-          (F_Return (E_Arith (A_Mult
+          (F_Return (E_Arith (A_Mul
                       (A_Func (F_Var "n"))
-                      (A_Func (F_Apply (F_Var "factorial") (E_Arith (A_Sub (A_Func (F_Var "n")) (A_Const 1))))))))))
-      (F_Apply (F_Var "factorial") (E_Arith (A_Func (F_Var "input")))).
+                      (A_Func (F_Apply (F_Var "factorial") (F_Return (E_Arith (A_Sub (A_Func (F_Var "n")) (A_Const 1)))))))))))
+      (F_Apply (F_Var "factorial") (F_Return (E_Arith (A_Func (F_Var "input"))))).
 
   Example factorial_eval (n : nat) :=
     Feval factorial (ExtendEnv "input" (V_Nat n) EmptyEnv) 1000.
+
+  Compute factorial_eval.
 
 End Examples.
 
