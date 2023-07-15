@@ -1,2 +1,5 @@
 -R theories Pinne
-theories/Main.v
+theories/Syntax.v
+theories/Semantics.v
+theories/Parser.v
+theories/Examples.v
