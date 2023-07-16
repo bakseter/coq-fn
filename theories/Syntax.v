@@ -4,10 +4,12 @@ Module Syntax.
 
   Inductive FExpr : Type :=
     | F_Let : string -> FExpr_Sub -> FExpr_Sub -> FExpr
+    | F_LetRec : string -> FExpr_Sub -> FExpr_Sub -> FExpr
 
   with FExpr_Sub : Type :=
     | F_Var : string -> FExpr_Sub
     | F_Lambda : string -> FExpr_Sub -> FExpr_Sub
+    | F_Fix : string -> FExpr_Sub -> FExpr_Sub
     | F_Apply : FExpr_Sub -> FExpr_Sub -> FExpr_Sub
     | F_Cond : BExpr -> FExpr_Sub -> FExpr_Sub -> FExpr_Sub
     | F_Return : Expr -> FExpr_Sub

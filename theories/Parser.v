@@ -536,12 +536,63 @@ Module Parser.
   Compute parse (parse_FExpr 10) mult_str.
   Compute execute mult_str (input_vars [("ione", 10); ("itwo", 20)]).
 
+  Compute Feval_Sub (F_Apply (F_Var "m") (F_Return (E_Arith (A_Const 2))))
+(ExtendEnv "m"
+         (V_Closure (F_Return (E_Arith (A_Mul (A_Var "n") (A_Var "m"))))
+            (ExtendEnv "n" (V_Nat 10)
+               (ExtendEnv "mult"
+                  (V_Closure
+                     (F_Lambda "n"
+                        (F_Lambda "m"
+                           (F_Return
+                              (E_Arith (A_Mul (A_Var "n") (A_Var "m"))))))
+                     (ExtendEnv "ione" (V_Nat 10)
+                        (ExtendEnv "itwo" (V_Nat 20) EmptyEnv)))
+                  (ExtendEnv "ione" (V_Nat 10)
+                     (ExtendEnv "itwo" (V_Nat 20) EmptyEnv))))) EmptyEnv) 10.
+
   Example parse_F_Cond_test :
     parse
       (parse_F_Cond (parse_BExpr 5) (parse_FExpr_Sub 5))
       "If {1 == 0} Then Return 1 Else Return 2" =
     inr ((F_Cond (B_Eq (E_Arith (A_Const 1)) (E_Arith (A_Const 0))) (F_Return (E_Arith (A_Const 1))) (F_Return (E_Arith (A_Const 2)))), []).
   Proof. simpl. reflexivity. Qed.
+
+  Compute
+    Feval
+      (F_Let "halla"
+        (F_Fixpoint "rec" 
+          (F_Lambda "n"
+            (F_Cond
+              (B_Eq (E_Arith (A_Var "n")) (E_Arith (A_Const 1)))
+                (F_Return (E_Arith (A_Const 1)))
+                (F_Apply
+                  (F_Var "rec")
+                  (F_Return (E_Arith (A_Sub (A_Func (F_Var "n")) (A_Const 1))))
+                )
+             )
+          )
+        )
+        (F_Apply (F_Var "halla") (F_Return (E_Arith (A_Const 5))))
+      )
+    EmptyEnv 100.
+
+  Compute
+    Feval_Sub
+        (F_Fixpoint "rec" 
+          (F_Lambda "n"
+            (F_Cond
+              (B_Eq (E_Arith (A_Var "n")) (E_Arith (A_Const 1)))
+                (F_Return (E_Arith (A_Const 1)))
+                (F_Apply
+                  (F_Var "rec")
+                  (F_Return (E_Arith (A_Sub (A_Func (F_Var "n")) (A_Const 1))))
+                )
+            )
+          )
+        )
+      EmptyEnv
+      100.
 
   Example factorial_str :=
     "Let factorial :=
@@ -552,6 +603,8 @@ Module Parser.
      In
      (factorial)
      (Return input)".
+
+  Compute parse (parse_FExpr 10) factorial_str.
 
   Example Y_combinator :=
       "Let ycomb :=
@@ -564,15 +617,6 @@ Module Parser.
         ".
 
   Compute parse (parse_FExpr 10) Y_combinator.
-
-  Example Y_Comb_env : Env :=
-    ExtendEnv "ycomb" (V_Closure
-            (F_Lambda "f"
-               (F_Apply
-                  (F_Lambda "x"
-                     (F_Apply (F_Var "f") (F_Apply (F_Var "x") (F_Var "x"))))
-                  (F_Lambda "x"
-                     (F_Apply (F_Var "f") (F_Apply (F_Var "x") (F_Var "x")))))) EmptyEnv) (ExtendEnv "input" (V_Nat 5) EmptyEnv).
 
   Example factorial_with_Y_Combinator :=
     "Let factorial :=
