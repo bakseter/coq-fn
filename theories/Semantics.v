@@ -2,6 +2,7 @@ From Coq Require Import Strings.String.
 From Coq Require Import Lists.List.
 From Coq Require Import Init.Nat.
 From Coq Require Import Program.Wf.
+From Coq Require Import Program.Basics.
 
 Require Import Syntax. Import Syntax.
 
@@ -28,7 +29,7 @@ Module Semantics.
   with Value : Type :=
   | V_Nat : nat -> Value
   | V_Bool : bool -> Value
-  | V_Closure : string -> FExpr -> Env -> Value.
+  | V_Closure : string -> Expr -> Env -> Value.
 
   Fixpoint lookup_env (varName : string) (env : Env) {struct env} : sum string Value :=
     match env with
@@ -72,151 +73,133 @@ Module Semantics.
     assumption.
   Qed.
 
-  Fixpoint Feval (expr : FExpr) (env : Env) (max : nat) : sum ((FExpr * Env) * list string) Value := 
+  Fixpoint eval (expr : Expr) (env : Env) (max : nat) : sum ((Expr * Env) * list string) Value := 
     match max with
     | 0 =>
-        inl ((expr, env), ("(Feval) Error: Maximum recursion depth exceeded" :: nil))
+        inl ((expr, env), ("(eval) Error: Maximum recursion depth exceeded" :: nil))
     | S max' =>
       match expr with
-      | F_Var varName =>
+      | Var varName =>
           match lookup_env varName env with
           | inr value =>
               inr value
           | inl err =>
               inl
-                ((expr, env), (("(Feval) Error: Unbound variable '" ++ varName ++ "'") :: err :: nil))
+                ((expr, env), (("(eval) Error: Unbound variable '" ++ varName ++ "'") :: err :: nil))
           end
-      | F_Lambda paramName bodyExpr =>
-          inr (V_Closure paramName (F_Lambda paramName bodyExpr) env)
-      | F_Apply funcExpr argExpr =>
-          match Feval funcExpr env max' with
-          | inr (V_Closure _ (F_Lambda paramName bodyExpr) _) =>
-              match Feval (F_Return argExpr) env max' with
-              | inr argValue =>
-                Feval bodyExpr (ExtendEnv paramName argValue env) max'
-              | inl err =>
-                  inl 
-                    ((expr, env), ("Error: Function argument did not evaluate to a value" :: (snd err)))
-              end
-          | _ =>
-              inl ((expr, env), ("(Feval) Error: Function expression did not evaluate to a function" :: nil))
+      | Lambda paramName bodyExpr =>
+          inr (V_Closure paramName (Lambda paramName bodyExpr) env)
+      | Apply expr1 expr2 =>
+          match eval expr1 env max', eval expr2 env max' with
+          | inr (V_Closure _ (Lambda paramName bodyExpr) closureEnv), inr argValue =>
+              eval bodyExpr (ExtendEnv paramName argValue env) max'
+          | inr argValue, inr (V_Closure _ (Lambda paramName bodyExpr) closureEnv) =>
+              eval bodyExpr (ExtendEnv paramName argValue env) max'
+          | inr (V_Closure _ (Lambda paramName bodyExpr) closureEnv), inl err =>
+              inl err
+          | inl err, _ =>
+              inl err
+          | _, inl err =>
+              inl err
+          | _, _ =>
+              inl ((expr, env), "Error: Application did not evaluate to a closure" :: nil)
           end
-      | F_Cond condExpr trueExpr falseExpr =>
-          match Beval condExpr env max' with
-          | inr b =>
-              if b
-              then Feval trueExpr env max'
-              else Feval falseExpr env max'
-          | inl err =>
-              inl ((expr, env), ("(Feval) Error: Condition did not evaluate to a boolean" :: err :: nil))
-          end
-      | F_Return retExpr =>
-          match retExpr with
-          | E_Bool b =>
-              match V_Bool <$> (Beval b env max') with
-              | inr v =>
-                  inr v
-              | inl err =>
-                  inl
-                    ((expr, env), ("(Feval) Error: Boolean expression did not evaluate to a boolean" :: err :: nil))
-              end
-          | E_Arith a =>
-              match V_Nat <$> (Aeval a env max') with
-              | inr v =>
-                  inr v
-              | inl err =>
-                  inl
-                    ((expr, env), (("(Feval) Error: Arithmetic expression did not evaluate to a number" :: err :: nil)))
-              end
-          end
-      | F_Let varName bindExpr bodyExpr =>
-          match Feval bindExpr env max' with
+      | Cond condExpr trueExpr falseExpr =>
+          match eval condExpr env max' with
           | inr val =>
-              Feval bodyExpr (ExtendEnv varName val env) max'
+              match val with
+              | V_Bool b =>
+                if b
+                then eval trueExpr env max'
+                else eval falseExpr env max'
+              | _ =>
+                  inl ((expr, env), ("(eval) Error: Condition did not evaluate to a boolean" :: nil))
+              end
+          | inl (_, err) =>
+              inl ((expr, env), ("(eval) Error: Condition did not evaluate to a boolean" :: err))
+          end
+      | Let varName bindExpr bodyExpr =>
+          match eval bindExpr env max' with
+          | inr val =>
+              eval bodyExpr (ExtendEnv varName val env) max'
           | inl err =>
               inl err
           end
-      end
-    end
-
-  with Aeval (a : AExpr) (env : Env) (max : nat) : sum string nat :=
-    match max with
-    | 0 =>
-        inl "(Aeval) Error: Maximum recursion depth exceeded"
-    | S max' =>
-      match a with
-      | A_Const n =>
-          inr n
-      | A_Add a1 a2 =>
-          add <$> (Aeval a1 env max') <*> (Aeval a2 env max')
-      | A_Sub a1 a2 =>
-          minus <$> (Aeval a1 env max') <*> (Aeval a2 env max')
-      | A_Mul a1 a2 =>
-          mult <$> (Aeval a1 env max') <*> (Aeval a2 env max')
-      | A_Func f =>
-          match Feval f env max' with
-          | inr (V_Nat n) =>
-              inr n
-          | inr (V_Bool b) =>
-              match b with
-              | true => inl "(Aeval) Error: Function did not evaluate to a number: 'true'"
-              | false => inl "(Aeval) Error: Function did not evaluate to a number: 'false'"
-              end
-          | inr (V_Closure _ _ _) =>
-              inl "(Aeval) Error: Function did not evaluate to a number: V_Closure"
-          | inl err =>
-              inl
-              ((concat_string_list (snd err)) ++
-                "(Aeval) Error: Function did not evaluate to a number")
+      | Nat n =>
+          inr (V_Nat n)
+      | Bool b =>
+          inr (V_Bool b)
+      | Add e1 e2 =>
+          match eval e1 env max', eval e2 env max' with
+          | inr (V_Nat n1), inr (V_Nat n2) =>
+              inr (V_Nat (n1 + n2))
+          | _, _ => inl ((expr, env), "Error: Addition did not evaluate to a number" :: nil)
           end
-      | A_Var varName =>
-          match lookup_env varName env with
-          | inr (V_Nat n) =>
-              inr n
-          | _ =>
-              inl
-                ("(Aeval) Error: Variable did not evaluate to a number: '" ++ varName ++ "'")
+      | Sub e1 e2 =>
+          match eval e1 env max', eval e2 env max' with
+          | inr (V_Nat n1), inr (V_Nat n2) =>
+              inr (V_Nat (n1 - n2))
+          | _, _ => inl ((expr, env), "Error: Subtraction did not evaluate to a number" :: nil)
           end
-      end
-    end
+      | Mul e1 e2 =>
+          match eval e1 env max', eval e2 env max' with
+          | inr (V_Nat n1), inr (V_Nat n2) =>
+              inr (V_Nat (n1 * n2))
 
-  with Beval (b : BExpr) (env : Env) (max : nat) : sum string bool :=
-    match max with
-    | 0 =>
-        inl "(Beval) Error: Maximum recursion depth exceeded"
-    | S max' =>
-      match b with
-      | B_Const b =>
-          inr b
-      | B_Eq e1 e2 =>
-          match e1, e2 with
-          | E_Bool b1, E_Bool b2 =>
-              Bool.eqb <$> (Beval b1 env max') <*> (Beval b2 env max')
-          | E_Arith a1, E_Arith a2 =>
-              Nat.eqb <$> (Aeval a1 env max') <*> (Aeval a2 env max')
+          | inr (V_Nat n1), inr (V_Closure paramName bodyExpr closureEnv) =>
+              inr (V_Closure paramName (Mul (Nat n1) bodyExpr) closureEnv)
+
+          | inr (V_Closure paramName bodyExpr closureEnv), inr (V_Nat n2) =>
+              inr (V_Closure paramName (Mul bodyExpr (Nat n2)) closureEnv)
+
+          | inr (V_Closure paramName1 bodyExpr1 closureEnv1), inr (V_Closure paramName2 bodyExpr2 closureEnv2) =>
+              inr (V_Closure paramName1 (Mul bodyExpr1 (Apply bodyExpr2 (Var paramName1))) closureEnv1)
+
+          | inr val, inr val' =>
+              inl ((expr, env), ("1Error: Multiplication did not evaluate to a number: " ++ value_to_string val ++ value_to_string val') :: nil)
+
+          | inr val, inl (_, err) =>
+              inl ((expr, env), ("2Error: Multiplication did not evaluate to a number: " ++ value_to_string val) :: err)
+
+          | inl (_, err), inr val =>
+              inl ((expr, env), ("3Error: Multiplication did not evaluate to a number: " ++ value_to_string val) :: err)
+
           | _, _ =>
-              inl
-                ("(Beval) Error: Attempted to compare a boolean to a number")
+              inl ((expr, env), "E4rror: Multiplication did not evaluate to a number" :: nil)
           end
-      | B_And b1 b2 =>
-          andb <$> (Beval b1 env max') <*> (Beval b2 env max')
-      | B_Func f =>
-          match Feval f env max' with
-          | inr (V_Bool b) =>
-              inr b
-          | _ =>
-              inl
-               ("(Beval) Error: Function did not evaluate to a boolean")
+      | And e1 e2 =>
+          match eval e1 env max', eval e2 env max' with
+          | inr (V_Bool b1), inr (V_Bool b2) =>
+              inr (V_Bool (andb b1 b2))
+          | _, _ => inl ((expr, env), "Error: And did not evaluate to a boolean" :: nil)
           end
-      | B_Var varName =>
-          match lookup_env varName env with
-          | inr (V_Bool b) =>
-              inr b
-          | _ =>
-              inl
-                ("(Beval) Error: Variable did not evaluate to a boolean: '" ++ varName ++ "'")
+      | Eq e1 e2 =>
+          match eval e1 env max', eval e2 env max' with
+          | inr (V_Nat n1), inr (V_Nat n2) =>
+              inr (V_Bool (Nat.eqb n1 n2))
+          | inr (V_Bool b1), inr (V_Bool b2) =>
+              inr (V_Bool (Bool.eqb b1 b2))
+          | _, _ => inl ((expr, env), "Error: Cannot compare values of non-equal types" :: nil)
           end
       end
     end.
+
+
+    Compute eval (Let "factorial" (Lambda "n" (Cond (Eq (Var "n") (Nat 1)) (Nat 1) (Mul (Var "n") (Apply (Var "factorial") (Sub (Var "n") (Nat 1)))))) (Apply (Var "factorial") (Nat 5))) EmptyEnv 100.
+
+    Compute eval
+      (Let "mult"
+        (Lambda "n"
+          (Lambda "m"
+            (Mul (Var "m") (Var "n"))
+          )
+        )
+        (Apply
+          (Apply
+            (Var "mult") (Var "ione")
+          )
+          (Var "itwo")
+        )
+      ) (ExtendEnv "ione" (V_Nat 2) (ExtendEnv "itwo" (V_Nat 3) EmptyEnv)) 100.
 
 End Semantics.
