@@ -57,34 +57,41 @@ Module Semantics.
 
   Notation "f <*> s" := (sum_ap f s) (at level 50, left associativity).
 
-  Fixpoint Feval_Sub (expr : FExpr_Sub) (env : Env) (max : nat) : sum (list string) Value :=
+  Fixpoint value_to_string (val : Value) : string :=
+    match val with
+    | V_Nat n => "V_Nat"
+    | V_Bool b => match b with true => "V_Bool true" | false => "V_Bool false" end
+    | V_Closure paramName bodyExpr closureEnv =>
+        "(λ" ++ paramName ++ ")"
+    | V_Fix fixName (F_Lambda paramName bodyExpr) fixEnv =>
+        "(fix " ++ fixName ++ " (λ" ++ paramName ++ "))"
+    | V_Fix fixName _ _ =>
+        "(fix " ++ fixName ++ " <non-function>)"
+    end.
+
+  Fixpoint Feval_Sub (expr : FExpr_Sub) (env : Env) (max : nat) : sum (Env * list string) Value :=
     match max with
     | 0 =>
-        inl ("Error: Maximum recursion depth exceeded" :: nil)
+        inl (env, ("(Feval_Sub) Error: Maximum recursion depth exceeded" :: nil))
     | S max' =>
       match expr with
       | F_Var varName =>
           match lookup_env varName env with
-          | inr (V_Closure name expr env) =>
-              inr (V_Closure name expr env)
-          | inr (V_Fix name expr env) =>
-              inr (V_Fix name expr env)
-          | inr _ =>
-              inl
-                (("(Feval_Sub) Error: Variable does not resolve to a function '" ++ varName ++ "'") :: nil)
+          | inr value =>
+              inr value
           | inl err =>
               inl
-                (("(Feval_Sub) Error: Unbound variable '" ++ varName ++ "'") :: err :: nil)
+                (env, (("(Feval_Sub) Error: Unbound variable '" ++ varName ++ "'") :: err :: nil))
           end
       | F_Lambda paramName bodyExpr =>
           inr (V_Closure paramName (F_Lambda paramName bodyExpr) env)
       | F_Fix fixName (F_Lambda paramName bodyExpr) => 
           let fixClosure := V_Fix fixName (F_Lambda paramName bodyExpr) env in
-          let env' := ExtendEnv fixName fixClosure env in
+          let env' := ExtendEnv paramName fixClosure env in
           inr fixClosure (* Wrap the result in a closure *)
       | F_Fix fixName _ =>
           inl
-            (("(Feval_Sub) Error: Fix expression does not resolve to a function '" ++ fixName ++ "'") :: nil)
+            (env, (("(Feval_Sub) Error: Fix expression does not resolve to a function '" ++ fixName ++ "'") :: nil))
       | F_Apply funcExpr argExpr =>
           match Feval_Sub funcExpr env max' with
           | inr (V_Closure _ (F_Lambda paramName bodyExpr) closureEnv) =>
@@ -93,15 +100,15 @@ Module Semantics.
                 Feval_Sub bodyExpr (ExtendEnv paramName argValue closureEnv) max'
               | inl err =>
                   inl 
-                    ("Error: Function argument did not evaluate to a value" :: err)
+                    (env, ("Error: Function argument did not evaluate to a value" :: (snd err)))
               end
           | inr (V_Fix fixName (F_Lambda paramName bodyExpr) fixEnv) =>
-              let fixClosure := V_Fix fixName (F_Lambda paramName bodyExpr) fixEnv in
+              let fixClosure := V_Fix paramName (F_Lambda paramName bodyExpr) fixEnv in
               let env' := ExtendEnv fixName fixClosure env in
               Feval_Sub bodyExpr env' max'
           | _ =>
               inl
-                ("Error: Attempted to apply a non-function" :: nil)
+                (env, ("(Feval_Sub) Error: Function expression did not evaluate to a function" :: nil))
           end
       | F_Cond condExpr trueExpr falseExpr =>
           match Beval condExpr env max' with
@@ -110,7 +117,7 @@ Module Semantics.
               then Feval_Sub trueExpr env max'
               else Feval_Sub falseExpr env max'
           | inl err =>
-              inl ("(Feval_Sub) Error: Condition did not evaluate to a boolean" :: err :: nil)
+              inl (env, ("(Feval_Sub) Error: Condition did not evaluate to a boolean" :: err :: nil))
           end
       | F_Return retExpr =>
           match retExpr with
@@ -120,7 +127,7 @@ Module Semantics.
                   inr v
               | inl err =>
                   inl
-                    ("(Feval_Sub) Error: Boolean expression did not evaluate to a boolean" :: err :: nil)
+                    (env, ("(Feval_Sub) Error: Boolean expression did not evaluate to a boolean" :: err :: nil))
               end
           | E_Arith a =>
               match V_Nat <$> (Aeval a env max') with
@@ -128,7 +135,7 @@ Module Semantics.
                   inr v
               | inl err =>
                   inl
-                    (("(Feval_Sub) Error: Arithmetic expression did not evaluate to a number" :: err :: nil))
+                    (env, (("(Feval_Sub) Error: Arithmetic expression did not evaluate to a number" :: err :: nil)))
               end
           end
       end
@@ -152,9 +159,19 @@ Module Semantics.
           match Feval_Sub f env max' with
           | inr (V_Nat n) =>
               inr n
-          | _ =>
+          | inr (V_Bool b) =>
+              match b with
+              | true => inl "(Aeval) Error: Function did not evaluate to a number: 'true'"
+              | false => inl "(Aeval) Error: Function did not evaluate to a number: 'false'"
+              end
+          | inr (V_Closure _ _ _) =>
+              inl "(Aeval) Error: Function did not evaluate to a number: V_Closure"
+          | inr (V_Fix _ _ _) =>
+              inl "(Aeval) Error: Function did not evaluate to a number: V_Fix"
+          | inl err =>
               inl
-                "(Aeval) Error: Function did not evaluate to a number"
+              ((concat_string_list (snd err)) ++
+                "(Aeval) Error: Function did not evaluate to a number")
           end
       | A_Var varName =>
           match lookup_env varName env with
@@ -204,28 +221,13 @@ Module Semantics.
                 ("(Beval) Error: Variable did not evaluate to a boolean: '" ++ varName ++ "'")
           end
       end
-    end
-
-  with fix100 (f : Value) (max : nat) : sum (list string) Value :=
-    match max with
-    | 0 =>
-        inl
-          ("(fix) Error: Maximum recursion depth exceeded" :: nil)
-    | S max' =>
-      match f with
-      | V_Fix var expr env =>
-          Feval_Sub expr (ExtendEnv var (V_Fix var expr env) env) max'
-      | _ =>
-          inl
-            ("(fix) Error: Value is not a fixpoint" :: nil)
-      end
     end.
 
-  Fixpoint Feval (expr : FExpr) (env : Env) (max : nat) : sum (list string) Value :=
+  Fixpoint Feval (expr : FExpr) (env : Env) (max : nat) : sum (Env * list string) Value :=
     match max with
     | 0 =>
         inl
-          ("(Feval) Error: Maximum recursion depth exceeded" :: nil)
+          (env, ("(Feval) Error: Maximum recursion depth exceeded" :: nil))
     | S max' =>
       match expr with
       | F_Let varName bindExpr bodyExpr =>
@@ -240,7 +242,60 @@ Module Semantics.
       end
     end.
 
-  Compute Beval (B_Eq (E_Arith (A_Const 3)) (E_Arith (A_Const 1))) EmptyEnv 1000.
+
+  Compute
+    Feval
+      (F_Let "isFive"
+        (F_Lambda "x"
+          (F_Cond (B_Eq (E_Arith (A_Func (F_Var "x"))) (E_Arith (A_Const 5)))
+            (F_Return (E_Bool (B_Const true)))
+            (F_Return (E_Bool (B_Const false)))
+          )
+        )
+        (F_Apply
+          (F_Var "isFive")
+          (F_Return (E_Arith (A_Const 0)))
+        )
+      )
+      EmptyEnv 6.
+
+  Compute
+    Feval
+      (F_LetRec "infinite"
+        (F_Lambda "x"
+          (F_Cond (B_Eq (E_Arith (A_Func (F_Var "x"))) (E_Arith (A_Const 5)))
+            (F_Return (E_Arith (A_Const 0)))
+            (F_Var "x")
+          )
+        )
+        (F_Apply
+          (F_Var "infinite")
+          (F_Return (E_Arith (A_Const 0)))
+        )
+      )
+      EmptyEnv
+      5000.
+
+  Example inf_env_1 :=
+    ExtendEnv "infinite"
+             (V_Fix "infinite"
+            (F_Lambda "x"
+               (F_Cond (B_Eq (E_Arith (A_Var "x")) (E_Arith (A_Const 5)))
+                  (F_Return (E_Arith (A_Const 0)))
+                  (F_Apply (F_Var "infinite")
+                     (F_Return (E_Arith (A_Add (A_Var "x") (A_Const 1))))))) EmptyEnv)
+              EmptyEnv.
+
+  Compute
+    Feval_Sub
+          (F_Cond (B_Eq (E_Arith (A_Var "x")) (E_Arith (A_Const 5)))
+            (F_Return (E_Arith (A_Const 0)))
+            (F_Apply
+              (F_Var "infinite")
+              (F_Return (E_Arith (A_Add (A_Var "x") (A_Const 1))))
+            )) inf_env_1 1000.
+
+
 
   Compute
     Feval
@@ -248,13 +303,16 @@ Module Semantics.
         (F_Lambda "n"
           (F_Cond (B_Eq (E_Arith (A_Var "n")) (E_Arith (A_Const 1)))
             (F_Return (E_Arith (A_Const 1)))
-              (F_Apply
-                (F_Var "factorial")
-                (F_Return (E_Arith (A_Var "n")))
+            (F_Apply
+              (F_Var "factorial")
+              (F_Return (E_Arith (A_Var "n")))
             )
           )
         )
-          (F_Var "factorial")
+          (F_Apply
+            (F_Var "factorial")
+            (F_Return (E_Arith (A_Const 5)))
+          )
       )
       (ExtendEnv "input" (V_Nat 5) EmptyEnv)
       1000.
