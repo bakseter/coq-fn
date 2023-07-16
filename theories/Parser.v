@@ -305,7 +305,7 @@ Module Parser.
     x <- parse_var_name;
     pure (A_Var x).
 
-  Definition parse_A_Func (p : parser FExpr_Sub) : parser AExpr :=
+  Definition parse_A_Func (p : parser FExpr) : parser AExpr :=
     f <- p;
     pure (A_Func f).
 
@@ -321,27 +321,23 @@ Module Parser.
     _ <- parse_keyword "*";
     pure A_Mul.
 
-  Definition parse_F_Var : parser FExpr_Sub :=
+  Definition parse_F_Var : parser FExpr :=
+    _ <- parse_keyword "Var";
     x <- parse_var_name;
     pure (F_Var x).
 
-  Definition parse_F_Lambda (p : parser FExpr_Sub) : parser FExpr_Sub :=
+  Definition parse_F_Lambda (p : parser FExpr) : parser FExpr :=
     _ <- parse_keyword "\";
     x <- parse_var_name;
     _ <- parse_keyword "->";
     f <- p;
     pure (F_Lambda x f).
 
-  Definition parse_F_Apply (pf : parser FExpr_Sub) : parser FExpr_Sub :=
-    _ <- parse_keyword "(";
-    f1 <- pf;
-    _ <- parse_keyword ")";
-    _ <- parse_keyword "(";
-    f2 <- pf;
-    _ <- parse_keyword ")";
-    pure (F_Apply f1 f2).
+  Definition parse_F_Apply : parser (FExpr -> Expr -> FExpr) :=
+    _ <- parse_keyword ".";
+    pure F_Apply.
 
-  Definition parse_F_Cond (pb : parser BExpr) (pf : parser FExpr_Sub) : parser FExpr_Sub :=
+  Definition parse_F_Cond (pb : parser BExpr) (pf : parser FExpr) : parser FExpr :=
     _ <- parse_keyword "If";
     b <- pb;
     _ <- parse_keyword "Then";
@@ -350,11 +346,10 @@ Module Parser.
     f2 <- pf;
     pure (F_Cond b f1 f2).
 
-
-  Definition parse_F_Return (pe : parser Expr) : parser FExpr_Sub :=
+  Definition parse_F_Return (p : parser Expr) : parser FExpr :=
     _ <- parse_keyword "Return";
-    a <- pe;
-    pure (F_Return a).
+    e <- p;
+    pure (F_Return e).
 
   (* BBBBBBEEEEEEXXXXXXPPPPPPPRRRRRREEEEESSS *)
 
@@ -366,7 +361,6 @@ Module Parser.
     | _ => fail_parser BExpr
     end.
 
-
   Definition parse_B_Eq (p : parser Expr) : parser BExpr :=
     _ <- parse_keyword "{";
     a1 <- p;
@@ -375,7 +369,7 @@ Module Parser.
     _ <- parse_keyword "}";
     pure (B_Eq a1 a2).
 
-  Definition parse_B_Func (p : parser FExpr_Sub) : parser BExpr :=
+  Definition parse_B_Func (p : parser FExpr) : parser BExpr :=
     f <- p;
     pure (B_Func f).
 
@@ -387,15 +381,31 @@ Module Parser.
     _ <- parse_keyword "&&";
     pure B_And.
 
-  Fixpoint parse_FExpr_Sub (n : nat) : parser FExpr_Sub :=
+  Definition parse_F_Let (p : parser FExpr) : parser FExpr :=
+    _ <- parse_keyword "Let";
+    x <- parse_var_name;
+    _ <- parse_keyword ":=";
+    f <- p;
+    _ <- parse_keyword "In";
+    f' <- p;
+    pure (F_Let x f f').
+
+  Fixpoint parse_FExpr (n : nat) : parser FExpr :=
     match n with
     | 0 => parse_F_Var
     | S n' =>
-          parse_F_Lambda (parse_FExpr_Sub n')
-      <|> parse_F_Return (parse_Expr n')
-      <|> parse_F_Var
-      <|> parse_F_Cond (parse_BExpr n') (parse_FExpr_Sub n')
-      <|> parse_F_Apply (parse_FExpr_Sub n')
+        let parse_Sub_FExpr :=
+          _ <- parse_keyword "(";
+          x <- parse_FExpr n';
+          _ <- parse_keyword ")";
+          pure x
+        in
+        let parse_F_Prims := parse_Sub_FExpr <|> parse_F_Var <|> parse_F_Lambda (parse_FExpr n')
+        in
+        (x <- parse_F_Prims;
+        op <- (parse_F_Apply);
+        y <- parse_Expr n';
+        pure (op x y)) <|> parse_F_Prims <|> parse_F_Cond (parse_BExpr n') (parse_FExpr n') <|> parse_F_Return (parse_Expr n') <|> parse_F_Let (parse_FExpr n')
     end
 
   with parse_BExpr (n : nat) : parser BExpr :=
@@ -408,7 +418,7 @@ Module Parser.
           _ <- parse_keyword ")";
           pure x
         in
-        let parse_B_Prims := parse_Sub_BExpr <|> parse_B_Const <|> parse_B_Var <|> parse_B_Func (parse_FExpr_Sub n')
+        let parse_B_Prims := parse_Sub_BExpr <|> parse_B_Const <|> parse_B_Var <|> parse_B_Func (parse_FExpr n')
         in
         (x <- parse_B_Prims;
         op <- (parse_B_And);
@@ -426,7 +436,7 @@ Module Parser.
           _ <- parse_keyword ")";
           pure x
         in
-        let parse_A_Prims := parse_Sub_AExpr <|> parse_A_Const <|> parse_A_Var <|> parse_A_Func (parse_FExpr_Sub max')
+        let parse_A_Prims := parse_Sub_AExpr <|> parse_A_Const <|> parse_A_Var <|> parse_A_Func (parse_FExpr max')
         in
         (x <- parse_A_Prims;
         op <- (parse_A_Add <|> parse_A_Sub <|> parse_A_Mul);
@@ -442,18 +452,6 @@ Module Parser.
         <|> (parse_map E_Bool (parse_BExpr n'))
     end.
 
-  Definition parse_F_Let (n : nat) : parser FExpr :=
-    _ <- parse_keyword "Let";
-    x <- parse_var_name;
-    _ <- parse_keyword ":=";
-    f <- parse_FExpr_Sub n;
-    _ <- parse_keyword "In";
-    f' <- parse_FExpr_Sub n;
-    pure (F_Let x f f').
-
-  Definition parse_FExpr (n : nat) : parser FExpr :=
-    parse_F_Let n.
-
   Example parse_Expr_test1 :
     parse (parse_Expr 1000) "2 + 3" =
     inr ((E_Arith (A_Add (A_Const 2) (A_Const 3)), [])).
@@ -465,7 +463,7 @@ Module Parser.
   Proof. simpl. reflexivity. Qed.
 
   Example parse_F_Lambda_test :
-    parse (parse_F_Lambda (parse_FExpr_Sub 5)) "\x -> x" =
+    parse (parse_F_Lambda (parse_FExpr 5)) "\x -> Var x" =
     inr ((F_Lambda "x" (F_Var "x")), []).
   Proof. simpl. reflexivity. Qed.
 
@@ -475,21 +473,21 @@ Module Parser.
   Proof. simpl. reflexivity. Qed.
 
   Example parse_FExpr_test1 :
-    parse (parse_FExpr_Sub 5) "\x -> Return 2 + 1" =
+    parse (parse_FExpr 5) "\x -> Return 2 + 1" =
     inr ((F_Lambda "x" (F_Return (E_Arith (A_Add (A_Const 2) (A_Const 1)))), [])).
   Proof. simpl. reflexivity. Qed.
 
   Example parse_FExpr_test2 :
-    parse (parse_FExpr_Sub 5) "\x -> Return x + 1" =
+    parse (parse_FExpr 5) "\x -> Return x + 1" =
     inr ((F_Lambda "x" (F_Return (E_Arith (A_Add (A_Var "x") (A_Const 1))))), []).
   Proof. simpl. reflexivity. Qed.
 
-  Definition execute (s : string) (e : Env) :=
+  Definition execute (s : string) (e : Env) : sum (list string) Value :=
     match parse (parse_FExpr 10) s with
     | inr (f, _) =>
         match Feval f e 10 with
         | inr v => inr v
-        | inl err => inl err
+        | inl err => inl (snd err)
         end
     | inl err => inl err
     end.
@@ -505,11 +503,11 @@ Module Parser.
       )
       (F_Apply
         (F_Var "double")
-        (F_Return (E_Arith (A_Func (F_Var "input"))))
+        (E_Arith (A_Func (F_Var "input")))
       )
     ).
 
-  Compute Feval program_AST (ExtendEnv "input" (V_Nat 3) EmptyEnv) 5.
+  Compute Feval program_AST (ExtendEnv "input" (V_Nat 3) EmptyEnv) 10.
 
   Definition input_vars (assignments : list (string * nat)) : Env :=
     fold_right (fun (assignment : string * nat) (env : Env) =>
@@ -519,21 +517,13 @@ Module Parser.
     ) EmptyEnv assignments.
 
   Example double_str :=
-    "Let double := \n -> Return n * 2 In (double) (Return input)".
+    "Let double := \n -> Return n * 2 In Var double . Return input".
   Compute parse (parse_FExpr 10) double_str.
   Compute execute double_str (input_vars [("input", 10)]).
 
   Example mult_str :=
-    "Let mult :=
-      \n -> \m ->
-          Return n * m
-     In
-      (
-        (mult)
-        (Return ione)
-      )
-      (Return itwo)".
-  Compute parse (parse_FExpr 10) mult_str.
+    "Let halla := Return 10 In Let hallab := Return 20".
+  Compute parse (parse_FExpr 12) mult_str.
   Compute execute mult_str (input_vars [("ione", 10); ("itwo", 20)]).
 
   Compute Feval_Sub (F_Apply (F_Var "m") (F_Return (E_Arith (A_Const 2))))
@@ -553,7 +543,7 @@ Module Parser.
 
   Example parse_F_Cond_test :
     parse
-      (parse_F_Cond (parse_BExpr 5) (parse_FExpr_Sub 5))
+      (parse_F_Cond (parse_BExpr 5) (parse_FExpr 5))
       "If {1 == 0} Then Return 1 Else Return 2" =
     inr ((F_Cond (B_Eq (E_Arith (A_Const 1)) (E_Arith (A_Const 0))) (F_Return (E_Arith (A_Const 1))) (F_Return (E_Arith (A_Const 2)))), []).
   Proof. simpl. reflexivity. Qed.
@@ -601,8 +591,7 @@ Module Parser.
         Then Return 1
         Else (factorial) (Return n - 1)
      In
-     (factorial)
-     (Return input)".
+     factorial . Return input".
 
   Compute parse (parse_FExpr 10) factorial_str.
 

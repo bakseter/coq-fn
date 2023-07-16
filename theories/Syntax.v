@@ -2,35 +2,18 @@ From Coq Require Import Strings.String.
 
 Module Syntax.
 
-  Inductive FExpr : Type :=
-    | F_Let : string -> FExpr_Sub -> FExpr_Sub -> FExpr
-    | F_LetRec : string -> FExpr_Sub -> FExpr_Sub -> FExpr
-
-  with FExpr_Sub : Type :=
-    | F_Var : string -> FExpr_Sub
-    | F_Lambda : string -> FExpr_Sub -> FExpr_Sub
-    | F_Fix : string -> FExpr_Sub -> FExpr_Sub
-    | F_Apply : FExpr_Sub -> FExpr_Sub -> FExpr_Sub
-    | F_Cond : BExpr -> FExpr_Sub -> FExpr_Sub -> FExpr_Sub
-    | F_Return : Expr -> FExpr_Sub
-
-  with Expr : Type :=
-    | E_Bool : BExpr -> Expr
-    | E_Arith : AExpr -> Expr
-
-  with BExpr : Type :=
-    | B_Const : bool -> BExpr
-    | B_Eq : Expr -> Expr -> BExpr
-    | B_And : BExpr -> BExpr -> BExpr
-    | B_Func : FExpr_Sub -> BExpr
-    | B_Var : string -> BExpr
-
-  with AExpr : Type :=
-    | A_Const : nat -> AExpr
-    | A_Add : AExpr -> AExpr -> AExpr
-    | A_Sub : AExpr -> AExpr -> AExpr
-    | A_Mul : AExpr -> AExpr -> AExpr
-    | A_Func : FExpr_Sub -> AExpr
-    | A_Var : string -> AExpr.
+  Inductive Expr : Type :=
+    | Let : string -> Expr -> Expr -> Expr
+    | Var : string -> Expr
+    | Lambda : string -> Expr -> Expr
+    | Apply : Expr -> Expr -> Expr
+    | Cond : Expr -> Expr -> Expr -> Expr
+    | Nat : nat -> Expr
+    | Add : Expr -> Expr -> Expr
+    | Sub : Expr -> Expr -> Expr
+    | Mul : Expr -> Expr -> Expr
+    | Bool : bool -> Expr
+    | And : Expr -> Expr -> Expr
+    | Eq : Expr -> Expr -> Expr.
 
 End Syntax.
