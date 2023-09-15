@@ -14,7 +14,7 @@ Module Parser.
 
   Close Scope string_scope.
 
-   Definition isWhite (c : ascii) : bool :=
+   Definition is_white (c : ascii) : bool :=
     let n := nat_of_ascii c in
     orb (orb (n =? 32) (* space *)
              (n =? 9)) (* tab *)
@@ -24,27 +24,27 @@ Module Parser.
   Notation "x '<=?' y" := (x <=? y)
     (at level 70, no associativity) : nat_scope.
 
-  Definition isLowerAlpha (c : ascii) : bool :=
+  Definition is_lower_alpha (c : ascii) : bool :=
     let n := nat_of_ascii c in
       andb (97 <=? n) (n <=? 122).
 
-  Definition isAlpha (c : ascii) : bool :=
+  Definition is_alpha (c : ascii) : bool :=
     let n := nat_of_ascii c in
       orb (andb (65 <=? n) (n <=? 90))
           (andb (97 <=? n) (n <=? 122)).
 
-  Definition isDigit (c : ascii) : bool :=
+  Definition is_digit (c : ascii) : bool :=
     let n := nat_of_ascii c in
        andb (48 <=? n) (n <=? 57).
 
   Inductive chartype := white | alpha | digit | other.
 
-  Definition classifyChar (c : ascii) : chartype :=
-    if isWhite c then
+  Definition classify_char (c : ascii) : chartype :=
+    if is_white c then
       white
-    else if isAlpha c then
+    else if is_alpha c then
       alpha
-    else if isDigit c then
+    else if is_digit c then
       digit
     else
       other.
@@ -61,7 +61,7 @@ Module Parser.
   Fixpoint string_to_nat' (cs : list ascii) (len : nat) {struct cs} : option nat :=
     match cs with
     | h :: t =>
-        match classifyChar h with
+        match classify_char h with
         | digit =>
           match string_to_nat' t (len - 1) with
           | Some n =>
@@ -86,7 +86,7 @@ Module Parser.
     match xs with
     | [] => tk
     | x :: xs' =>
-      match cls, classifyChar x, x with
+      match cls, classify_char x, x with
       | _, _, "(" =>
         tk ++ ["("] :: (tokenize_helper other [] xs')
       | _, _, ")" =>
@@ -252,7 +252,7 @@ Module Parser.
       match input with
       | [] => inl ["Nothing to parse."]
       | h :: t =>
-          if forallb isLowerAlpha (list_of_string h) then
+          if forallb is_lower_alpha (list_of_string h) then
             inr (h, t)
           else
             inl
@@ -316,8 +316,6 @@ Module Parser.
     e3 <- p;
     pure (Cond e1 e2 e3).
 
-  (* BBBBBBEEEEEEXXXXXXPPPPPPPRRRRRREEEEESSS *)
-
   Definition parse_Bool : parser Expr :=
     p <- parse_keyword "True" <|> parse_keyword "False";
     match p with
@@ -360,11 +358,11 @@ Module Parser.
           _ <- parse_keyword ")";
           pure x
         in
-        let parse_Simple := 
+        let parse_Simple :=
             parse_Sub_Expr
         <|> parse_Var
         <|> parse_Lambda (parse_Expr n')
-        <|> parse_Bool 
+        <|> parse_Bool
         <|> parse_Nat
         <|> parse_Cond (parse_Expr n')
         <|> parse_Let (parse_Expr n')

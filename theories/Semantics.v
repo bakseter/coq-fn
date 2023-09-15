@@ -25,11 +25,10 @@ Module Semantics.
   Inductive Env : Type :=
   | EmptyEnv : Env
   | ExtendEnv : string -> Value -> Env -> Env
-
-  with Value : Type :=
-  | V_Nat : nat -> Value
-  | V_Bool : bool -> Value
-  | V_Closure : string -> Expr -> Env -> Value.
+    with Value : Type :=
+    | V_Nat : nat -> Value
+    | V_Bool : bool -> Value
+    | V_Closure : string -> Expr -> Env -> Value.
 
   Fixpoint lookup_env (varName : string) (env : Env) {struct env} : sum string Value :=
     match env with
@@ -73,7 +72,7 @@ Module Semantics.
     assumption.
   Qed.
 
-  Fixpoint eval (expr : Expr) (env : Env) (max : nat) : sum ((Expr * Env) * list string) Value := 
+  Fixpoint eval (expr : Expr) (env : Env) (max : nat) : sum ((Expr * Env) * list string) Value :=
     match max with
     | 0 =>
         inl ((expr, env), ("(eval) Error: Maximum recursion depth exceeded" :: nil))
